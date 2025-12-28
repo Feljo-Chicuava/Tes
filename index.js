@@ -29,16 +29,19 @@ module.exports = async (req, res) => {
       });
     });
 
-    res.status(200).json({
+    // 💡 Header obrigatório para JSON
+    res.setHeader("Content-Type", "application/json");
+    res.status(200).send(JSON.stringify({
       status: true,
       total: lista.length,
       resultados: lista
-    });
+    }));
 
   } catch (e) {
-    res.status(500).json({
+    res.setHeader("Content-Type", "application/json");
+    res.status(500).send(JSON.stringify({
       status: false,
       error: e.message
-    });
+    }));
   }
 };
