@@ -1,17 +1,59 @@
-FROM node:18
+060000FROM node:18
 
-# Instala dependências essenciais e yt-dlp atualizado
-RUN apt update && apt install -y ffmpeg curl \
- && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
-    -o /usr/local/bin/yt-dlp \
- && chmod a+rx /usr/local/bin/yt-dlp
+# Instala dependências e yt-dlp com atualização automática
+RUN apt update && apt install -y \
+    ffmpeg \
+    curl \
+    python3 \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
 
-# Define diretório de trabalho
+# Instala yt-dlp via pip para melhor gerenciamento
+RUN python3 -m pip install --no-cache-dir --upgrade \
+    yt-dlp \
+    brotli
+
+# Cria diretório para cookies (opcional, mas útil)
+RUN mkdir -p /app/cookies
+
 WORKDIR /app
-COPY . .
-
-# Instala dependências Node
+COPY package*.json ./
 RUN npm install
 
-# Inicia aplicação
+COPY . .
+
+# Garante que yt-dlp está atualizado
+RUN yt-dlp -U
+
+EXPOSE 3000
+
+CMD ["npm", "start"]FROM node:18
+
+# Instala dependências e yt-dlp com atualização automática
+RUN apt update && apt install -y \
+    ffmpeg \
+    curl \
+    python3 \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Instala yt-dlp via pip para melhor gerenciamento
+RUN python3 -m pip install --no-cache-dir --upgrade \
+    yt-dlp \
+    brotli
+
+# Cria diretório para cookies (opcional, mas útil)
+RUN mkdir -p /app/cookies
+
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+
+COPY . .
+
+# Garante que yt-dlp está atualizado
+RUN yt-dlp -U
+
+EXPOSE 3000
+
 CMD ["npm", "start"]
