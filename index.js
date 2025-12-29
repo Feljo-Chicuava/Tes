@@ -1,47 +1,39 @@
-const axios = require("axios");
-const cheerio = require("cheerio");
+import express from "express";
+import { exec } from "child_process";
 
-module.exports = async (req, res) => {
-  try {
-    const response = await axios.get(
-      "https://appzin.cineverseapp.store",
-      { headers: { "User-Agent": "Mozilla/5.0" } }
-    );
+const app = express();
+const PORT = process.env.PORT || 3000;
 
-    const $ = cheerio.load(response.data);
-    const lista = [];
+app.get("/", (req, res) => {
+  res.json({ status: "API yt-dlp online" });
+});
 
-    $("div#genre_lancamentos article.item.movies").each((_, el) => {
-      const link = $(el).find("div.poster a").attr("href") || "";
+app.get("/download", (req, res) => {
+  const { url, type } = req.query;
 
-      let tipo = "Desconhecido";
-      if (link.includes("/trailer-m/")) tipo = "Filme";
-      else if (link.includes("/trailer-s/")) tipo = "Série";
-
-      lista.push({
-        id: $(el).attr("id") || "",
-        titulo: $(el).find("div.data h3 a").text().trim(),
-        imagem: $(el).find("div.poster img").attr("src") || "",
-        rating: $(el).find("div.rating").text().trim() || "",
-        data: $(el).find("div.data span").text().trim() || "",
-        link,
-        tipo
-      });
-    });
-
-    // 💡 Header obrigatório para JSON
-    res.setHeader("Content-Type", "application/json");
-    res.status(200).send(JSON.stringify({
-      status: true,
-      total: lista.length,
-      resultados: lista
-    }));
-
-  } catch (e) {
-    res.setHeader("Content-Type", "application/json");
-    res.status(500).send(JSON.stringify({
-      status: false,
-      error: e.message
-    }));
+  if (!url) {
+    return res.status(400).json({ error: "URL obrigatória" });
   }
-};
+
+  const format =
+    type === "mp3"
+      ? "-x --audio-format mp3"
+      : "-f best";
+
+  const cmd = `yt-dlp ${format} -g "${url}"`;
+
+  exec(cmd, (err, stdout) => {
+    if (err) {
+      return res.status(500).json({ error: "Falha ao processar vídeo" });
+    }
+
+    res.json({
+      success: true,
+      download_url: stdout.trim()
+    });
+  });
+});
+
+app.listen(PORT, () => {
+  console.log("API rodando na porta " + PORT);
+});
