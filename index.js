@@ -1,4 +1,4 @@
-// index.js - Na raiz, não na pasta api!
+// index.js - Código principal atualizado para Node 24
 const TARGET_BASE = "https://player.fimoo.site";
 const FAKE_ORIGIN = "https://hyper.hyperappz.site/";
 const FAKE_REFERER = "https://hyper.hyperappz.site/";
@@ -6,18 +6,28 @@ const FAKE_REFERER = "https://hyper.hyperappz.site/";
 module.exports = async (req, res) => {
   try {
     // ================= PEGAR PATH DA URL =================
-    const path = req.url.replace(/^\//, '');
+    const url = new URL(req.url, `https://${req.headers.host}`);
+    const path = url.pathname.replace(/^\//, '');
     
     // Se for acesso à raiz sem nada
     if (!path) {
-      res.setHeader('Content-Type', 'text/html');
+      res.setHeader('Content-Type', 'text/html; charset=UTF-8');
       return res.end(`
+        <!DOCTYPE html>
         <html>
-          <head><title>Player Proxy</title></head>
+          <head>
+            <title>Player Proxy</title>
+            <meta charset="UTF-8">
+            <style>
+              body { font-family: Arial, sans-serif; padding: 40px; text-align: center; }
+              h1 { color: #333; }
+              code { background: #f5f5f5; padding: 5px 10px; border-radius: 4px; }
+            </style>
+          </head>
           <body>
-            <h1>Player Proxy</h1>
-            <p>Use: https://${req.headers.host}/12345</p>
-            <p>Exemplo: https://${req.headers.host}/70145</p>
+            <h1>🎬 Player Proxy</h1>
+            <p>Use: <code>https://${req.headers.host}/70145</code></p>
+            <p>Substitua <code>70145</code> pelo ID do vídeo</p>
           </body>
         </html>
       `);
@@ -35,81 +45,119 @@ module.exports = async (req, res) => {
     
     const targetUrl = `${TARGET_BASE}${targetPath}`;
     
+    // ================= HEADERS PARA REQUEST =================
+    const headers = {
+      "Origin": FAKE_ORIGIN,
+      "Referer": FAKE_REFERER,
+      "User-Agent": req.headers['user-agent'] || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Accept": req.headers['accept'] || "*/*",
+      "Accept-Language": req.headers['accept-language'] || "pt-BR,pt;q=0.9,en;q=0.8,es;q=0.7",
+      "Accept-Encoding": "gzip, deflate, br"
+    };
+    
     // ================= FAZER REQUEST =================
     const response = await fetch(targetUrl, {
-      headers: {
-        "Origin": FAKE_ORIGIN,
-        "Referer": FAKE_REFERER,
-        "User-Agent": req.headers['user-agent'] || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": req.headers['accept'] || "*/*",
-        "Accept-Language": req.headers['accept-language'] || "pt-BR,pt;q=0.9,en;q=0.8"
-      },
+      headers: headers,
       redirect: 'follow'
     });
     
-    // ================= PROCESSAR RESPOSTA =================
-    const contentType = response.headers.get('content-type') || '';
-    const isHtml = contentType.includes('text/html');
-    const isCss = contentType.includes('text/css');
-    const isJs = contentType.includes('javascript');
-    
-    // ================= COPIAR HEADERS =================
-    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-    res.setHeader('Referrer-Policy', 'no-referrer');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    
-    if (contentType) res.setHeader('Content-Type', contentType);
-    if (response.headers.get('cache-control')) {
-      res.setHeader('Cache-Control', response.headers.get('cache-control'));
+    // ================= VERIFICAR STATUS =================
+    if (!response.ok) {
+      res.status(response.status);
+      res.setHeader('Content-Type', 'text/html; charset=UTF-8');
+      return res.end(`
+        <html>
+          <body>
+            <h1>Erro ${response.status}</h1>
+            <p>Não foi possível carregar: ${req.url}</p>
+            <p>Tente: <a href="https://${req.headers.host}/70145">https://${req.headers.host}/70145</a></p>
+          </body>
+        </html>
+      `);
     }
     
     // ================= PROCESSAR CONTEÚDO =================
-    if (isHtml || isCss || isJs) {
-      let content = await response.text();
+    const contentType = response.headers.get('content-type') || '';
+    let content;
+    
+    if (contentType.includes('text/') || contentType.includes('javascript') || contentType.includes('css')) {
+      // Para textos (HTML, JS, CSS)
+      content = await response.text();
       
-      // Substituir todas as URLs do domínio original
+      // Substituir domínio original pelo nosso
       content = content.replace(
-        new RegExp(TARGET_BASE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'),
+        new RegExp(TARGET_BASE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'),
         `https://${req.headers.host}`
       );
       
       // Substituir URLs relativas
       content = content.replace(
         /(href|src|action)=["'](\/[^"']*)["']/gi,
-        `$1="https://${req.headers.host}$2"`
+        (match, attr, path) => {
+          return `${attr}="https://${req.headers.host}${path}"`;
+        }
       );
       
       // Substituir URLs em CSS
       content = content.replace(
         /url\(['"]?(\/[^'")]*)['"]?\)/gi,
-        `url(https://${req.headers.host}$1)`
+        (match, path) => {
+          return `url(https://${req.headers.host}${path})`;
+        }
       );
       
-      // Para HTML, adicionar base tag
-      if (isHtml && !content.includes('<base href')) {
+      // Para HTML, adicionar base tag se necessário
+      if (contentType.includes('text/html') && !content.includes('<base href')) {
         content = content.replace(
           /<head[^>]*>/i,
-          `$&<base href="https://${req.headers.host}/">`
+          (match) => {
+            return `${match}<base href="https://${req.headers.host}/">`;
+          }
         );
       }
       
-      res.end(content);
     } else {
-      // Para imagens, fonts, etc. - retornar buffer
+      // Para binários (imagens, fonts, etc.)
       const buffer = await response.arrayBuffer();
-      res.end(Buffer.from(buffer));
+      content = Buffer.from(buffer);
     }
     
+    // ================= HEADERS DE RESPOSTA =================
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    
+    // Copiar headers do response
+    const headersToCopy = ['content-type', 'cache-control', 'content-length', 'last-modified'];
+    headersToCopy.forEach(header => {
+      const value = response.headers.get(header);
+      if (value) res.setHeader(header, value);
+    });
+    
+    // ================= ENVIAR RESPOSTA =================
+    res.end(content);
+    
   } catch (error) {
-    console.error('Erro:', error);
+    console.error('❌ Erro no proxy:', error.message);
+    
     res.statusCode = 502;
-    res.setHeader('Content-Type', 'text/html');
+    res.setHeader('Content-Type', 'text/html; charset=UTF-8');
     res.end(`
-      <html><body>
-        <h1>Erro 502</h1>
-        <p>Falha ao carregar: ${req.url}</p>
-        <p>Tente: https://${req.headers.host}/70145</p>
-      </body></html>
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Erro 502</title>
+          <meta charset="UTF-8">
+        </head>
+        <body style="font-family: Arial, sans-serif; padding: 20px;">
+          <h1 style="color: #d32f2f;">⚠️ Erro 502 - Bad Gateway</h1>
+          <p><strong>URL solicitada:</strong> ${req.url}</p>
+          <p><strong>Erro:</strong> ${error.message}</p>
+          <p><strong>Solução:</strong> Tente acessar <a href="https://${req.headers.host}/70145">https://${req.headers.host}/70145</a></p>
+          <hr>
+          <p><small>Player Proxy - ${new Date().toLocaleString()}</small></p>
+        </body>
+      </html>
     `);
   }
 };
